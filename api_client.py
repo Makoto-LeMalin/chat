@@ -1,7 +1,6 @@
 """API客户端模块"""
 
 from openai import OpenAI
-import config
 
 
 class DeepSeekAPIClient:

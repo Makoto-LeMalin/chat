@@ -8,7 +8,7 @@ except:
     pass
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, font
+from tkinter import messagebox
 import json
 import os
 import threading

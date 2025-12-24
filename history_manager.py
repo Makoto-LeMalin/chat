@@ -3,7 +3,8 @@
 import os
 import re
 from datetime import datetime
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
+
 import config
 
 

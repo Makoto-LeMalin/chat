@@ -1,6 +1,6 @@
-import PyInstaller.__main__
 import os
-import sys
+
+import PyInstaller.__main__
 
 # 确保在正确的目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
