@@ -3,3 +3,6 @@
 /__pycache__
 /chat_history
 /config
+/build
+*.spec
+/dist
