@@ -12,11 +12,9 @@ from tkinter import messagebox
 import json
 import os
 import threading
-from datetime import datetime
 import config
 import ui_components as ui
 import chat_display as chat
-import markdown_renderer as md
 import api_client
 import history_manager
 
@@ -817,7 +815,6 @@ class ModernDeepSeekClient:
         self.current_pair_index = len(self.conversation_pairs)
         user_msg_index = len(self.conversation_history)
 
-        # 使用ConversationPair类创建对话对
         pair = chat.ConversationPair(
             self.chat_content_frame,
             self.current_pair_index,
@@ -828,14 +825,15 @@ class ModernDeepSeekClient:
             delete_callback=self._delete_conversation_pair
         )
 
-        pair.display_user_message(message, self.chat_canvas)
+        pair.display_user_message(message)  # 移除了canvas参数
 
         # 存储对话对
         self.conversation_pairs[self.current_pair_index] = pair
         self.conversation_pair_frames[self.current_pair_index] = pair.pair_frame
 
         # 更新滚动区域
-        chat.update_scroll_region(self.chat_canvas, self.chat_content_frame)
+        from message_components import update_scroll_region
+        update_scroll_region(self.chat_canvas, self.chat_content_frame)
         self.update_status("正在生成...", config.COLOR_STATUS_ORANGE)
 
     def _display_ai_response(self, params):
@@ -859,9 +857,10 @@ class ModernDeepSeekClient:
                 pair = self.conversation_pairs[self.current_pair_index]
                 pair.display_ai_message(
                     ai_reply, reasoning_content, self._is_thinking_enabled(),
-                    self.chat_canvas, len(self.conversation_history) - 1
+                    len(self.conversation_history) - 1  # 移除了canvas参数
                 )
-                chat.update_scroll_region(self.chat_canvas, self.chat_content_frame)
+                from message_components import update_scroll_region
+                update_scroll_region(self.chat_canvas, self.chat_content_frame)
 
             tokens = response.usage.total_tokens if response.usage else 'N/A'
             self.update_status(f"已完成 | Tokens: {tokens}", config.COLOR_STATUS_GREEN)
@@ -875,12 +874,12 @@ class ModernDeepSeekClient:
                 return
 
             pair = self.conversation_pairs[self.current_pair_index]
-            pair.start_ai_stream(self._is_thinking_enabled(), self.chat_canvas)
+            thinking_enabled = self._is_thinking_enabled()
+            pair.start_ai_stream(thinking_enabled)
 
             full_response = ""
             reasoning_content = ""
             in_thinking_phase = True
-            thinking_char_count = 0
             answer_char_count = 0
 
             stream = self.api_client.create_completion_stream(**params)
@@ -891,30 +890,25 @@ class ModernDeepSeekClient:
                 if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                     thinking_chunk = delta.reasoning_content
                     reasoning_content += thinking_chunk
-                    pair.insert_thinking_chunk(thinking_chunk, self.chat_canvas,
-                                             self.chat_content_frame)
-                    thinking_char_count += len(thinking_chunk)
+                    pair.insert_thinking_chunk(thinking_chunk, self.chat_content_frame)
                     self.root.update()
 
                 if hasattr(delta, 'content') and delta.content:
                     if in_thinking_phase and reasoning_content:
-                        pair.text_widget.insert(tk.END, "\n\n💡 最终回答:\n", "ai_tag")
+                        # 思考过程结束，切换到回答
                         in_thinking_phase = False
-                        chat.update_text_height(pair.text_widget)
-                        chat.update_scroll_region(self.chat_canvas, self.chat_content_frame)
+                        # 注意：这里不需要额外操作，insert_answer_chunk会处理最终回答标题
 
                     content_chunk = delta.content
                     full_response += content_chunk
-                    pair.insert_answer_chunk(content_chunk, self.chat_canvas,
-                                            self.chat_content_frame, answer_char_count)
+                    pair.insert_answer_chunk(content_chunk, self.chat_content_frame, answer_char_count)
                     answer_char_count += len(content_chunk)
                     self.root.update()
 
             # 完成流式显示
             pair.finish_ai_stream(
-                full_response, reasoning_content, self._is_thinking_enabled(),
-                self.chat_canvas, self.chat_content_frame,
-                len(self.conversation_history)
+                full_response, reasoning_content, thinking_enabled,
+                len(self.conversation_history), self.chat_content_frame
             )
 
             # 保存对话历史
@@ -1253,7 +1247,7 @@ class ModernDeepSeekClient:
                         delete_callback=self._delete_conversation_pair
                     )
 
-                    pair.display_user_message(msg["content"], self.chat_canvas)
+                    pair.display_user_message(msg["content"])
 
                     ai_msg_index = None
                     if i + 1 < len(imported_history) and imported_history[i + 1]["role"] == "assistant":
@@ -1261,21 +1255,17 @@ class ModernDeepSeekClient:
                         ai_msg = imported_history[i]
                         ai_msg_index = base_msg_index + i
 
-                        pair.text_widget.configure(state=tk.NORMAL)
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        pair.text_widget.insert(tk.END, f"\n🤖 DeepSeek AI ({timestamp})\n", "ai_tag")
-                        if ai_msg.get("reasoning_content"):
-                            pair.text_widget.insert(tk.END, "🧠 思考过程:\n", "thinking_tag")
-                            md.render_markdown(pair.text_widget, ai_msg["reasoning_content"],
-                                             "thinking_content")
-                            pair.text_widget.insert(tk.END, "\n\n💡 最终回答:\n", "ai_tag")
-                        md.render_markdown(pair.text_widget, ai_msg["content"], "ai_message")
-                        pair.text_widget.insert(tk.END, f"\n{'─' * config.SEPARATOR_LENGTH}\n",
-                                              "separator")
-                        chat.update_text_height(pair.text_widget)
-                        # 确保滚动到底部
-                        pair.text_widget.see(tk.END)
-                        pair.text_widget.configure(state=tk.DISABLED)
+                        # 获取思考内容和是否启用思考模式
+                        reasoning_content = ai_msg.get("reasoning_content")
+                        thinking_enabled = bool(reasoning_content)
+                        
+                        # 使用新的display_ai_message方法显示AI消息
+                        pair.display_ai_message(
+                            ai_msg["content"],
+                            reasoning_content,
+                            thinking_enabled,
+                            ai_msg_index
+                        )
 
                     self.conversation_pairs[current_pair_idx] = pair
                     self.conversation_pair_frames[current_pair_idx] = pair.pair_frame
