@@ -1,6 +1,6 @@
 # DeepSeek AI Assistant
 
-一个基于 Python 和 Tkinter 的现代化 DeepSeek API 客户端桌面应用程序，支持流式对话、历史记录管理和 Markdown 渲染。
+一个基于 Python 的现代化 DeepSeek API 客户端桌面应用程序，支持流式对话、历史记录管理和 Markdown 渲染。**使用 Qt（PySide6）界面，无长对话显示高度限制**。
 
 ## 功能特点
 
@@ -45,6 +45,7 @@ pip install -r requirements.txt
 ```text
 openai>=1.0.0
 markdown>=3.5
+PySide6>=6.5.0      # Qt 界面，无长对话显示限制
 PyInstaller>=6.0.0  # 仅用于打包
 ```
 
@@ -109,32 +110,32 @@ python build.py
 
 ```
 DeepSeek-AI-Assistant/
-├── main.py              # 主程序入口
+├── main.py              # 主程序入口（Qt 版）
 ├── config.py            # 配置和常量定义
-├── ui_components.py     # UI 组件工厂函数
-├── chat_display.py      # 对话显示模块
-├── markdown_renderer.py # Markdown 渲染模块
+├── qt_ui.py             # Qt 样式与主题
+├── qt_sidebar.py        # 左侧配置栏与右侧历史栏
+├── qt_chat.py           # 对话区域与对话对组件
 ├── api_client.py        # API 客户端封装
 ├── history_manager.py   # 历史记录管理模块
-├── build.py            # 打包脚本
-├── requirements.txt    # 依赖列表
-├── config/             # 配置文件目录
+├── build.py             # 打包脚本
+├── requirements.txt     # 依赖列表
+├── config/              # 配置文件目录
 │   └── deepseek_config.json
-├── chat_history/       # 对话历史目录
+├── chat_history/        # 对话历史目录
 │   └── *.md
-├── icon/              # 图标目录（可选）
+├── icon/                # 图标目录（可选）
 │   └── deepseek.ico
-└── dist/              # 打包输出目录（打包后生成）
+└── dist/                # 打包输出目录（打包后生成）
 ```
 
 ## 核心模块说明
 
-- **main.py**：主程序文件，负责初始化应用程序、创建用户界面和处理主要业务逻辑。
-- **config.py**：定义应用程序的常量、颜色主题和配置管理函数。
-- **ui_components.py**：包含创建各种 UI 组件的工厂函数，使界面代码更加模块化。
-- **chat_display.py**：处理对话的显示逻辑，包括消息排版、滚动管理和交互功能。
-- **markdown_renderer.py**：将 Markdown 文本渲染为 Tkinter Text 控件中的格式化文本。
-- **api_client.py**：封装 DeepSeek API 的调用，处理参数构建、流式响应和错误处理。
+- **main.py**：Qt 主程序，负责初始化应用、创建界面和处理主要业务逻辑。
+- **config.py**：定义常量、颜色主题和配置管理函数。
+- **qt_ui.py**：全局样式表与主题（浅色/深色）。
+- **qt_sidebar.py**：可折叠侧栏、左侧 API 配置面板、右侧历史记录列表。
+- **qt_chat.py**：聊天区域、对话对组件及 Markdown 显示。
+- **api_client.py**：封装 DeepSeek API 调用，处理流式响应和错误。
 - **history_manager.py**：管理对话历史的导入、导出、解析和显示。
 
 ## 常见问题
@@ -180,7 +181,7 @@ DeepSeek-AI-Assistant/
 
 ### 添加新功能
 1. 在相应模块中添加新功能代码
-2. 在 ui_components.py 中添加对应的 UI 组件
+2. 在 qt_sidebar.py / qt_chat.py / qt_ui.py 中添加或调整 UI 与样式
 3. 在 main.py 中集成新功能
 
 ### 代码规范

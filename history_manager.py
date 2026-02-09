@@ -176,10 +176,7 @@ class HistoryManager:
     
     def export_chat(self, conversation_history, conversation_pairs, model, 
                    generate_title_callback=None):
-        """导出对话到文件"""
-        if not conversation_history:
-            return None, "没有对话内容可导出"
-        
+        """导出对话到文件（使用 Tk filedialog）"""
         file_path = filedialog.asksaveasfilename(
             defaultextension=".md",
             filetypes=[("Markdown文件", "*.md"), ("文本文件", "*.txt"), ("所有文件", "*.*")],
@@ -187,10 +184,17 @@ class HistoryManager:
             initialdir=self.chat_history_dir,
             initialfile=f"deepseek_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         )
-        
         if not file_path:
             return None, None
-        
+        return self.export_chat_to_path(file_path, conversation_history, conversation_pairs, model, generate_title_callback)
+
+    def export_chat_to_path(self, file_path, conversation_history, conversation_pairs, model,
+                            generate_title_callback=None):
+        """导出对话到指定路径（不弹窗，供 Qt 等非 Tk 前端调用）"""
+        if not conversation_history:
+            return None, "没有对话内容可导出"
+        if not file_path:
+            return None, None
         try:
             # 检查是否有选中的对话对
             selected_pairs = [idx for idx, pair in conversation_pairs.items() 
@@ -279,29 +283,97 @@ class HistoryManager:
         # 收集对话内容用于生成标题
         content_parts = []
         total_length = 0
+        round_num = 1
+        i = 0
         
-        for msg in messages_to_use:
-            if msg["role"] == "user":
-                content = f"用户: {msg['content']}"
-            else:
-                # 对于AI回复，只取主要内容，不包含思考过程（如果太长）
-                content = msg['content']
-                if len(content) > config.MAX_CONTENT_PREVIEW:
-                    content = content[:config.MAX_CONTENT_PREVIEW] + "..."
-                content = f"AI: {content}"
+        while i < len(messages_to_use):
+            msg = messages_to_use[i]
             
-            # 如果加上这条消息会超过限制，就停止
-            if total_length + len(content) > max_length:
-                content_parts.append("...（对话内容较长，已截取部分）")
+            if msg["role"] == "user":
+                # 用户消息：包含完整内容
+                user_content = msg['content']
+                # 如果内容太长，适当截取但保留更多信息
+                if len(user_content) > config.MAX_CONTENT_PREVIEW * 2:
+                    user_content = user_content[:config.MAX_CONTENT_PREVIEW * 2] + "..."
+                
+                # 检查下一条消息是否是AI回复（形成对话对）
+                if i + 1 < len(messages_to_use) and messages_to_use[i + 1]["role"] == "assistant":
+                    # 这是一对对话，一起处理
+                    ai_msg = messages_to_use[i + 1]
+                    
+                    # 构建完整的对话对内容
+                    pair_content_parts = [f"第{round_num}轮对话\n\n用户:\n{user_content}"]
+                    
+                    # AI消息：包含思考过程和完整回答
+                    ai_content_parts = []
+                    
+                    # 包含思考过程（如果存在）
+                    if ai_msg.get("reasoning_content"):
+                        reasoning = ai_msg['reasoning_content']
+                        # 思考过程如果太长，适当截取但保留更多
+                        if len(reasoning) > config.MAX_CONTENT_PREVIEW * 2:
+                            reasoning = reasoning[:config.MAX_CONTENT_PREVIEW * 2] + "..."
+                        ai_content_parts.append(f"思考过程:\n{reasoning}")
+                    
+                    # 包含主要回答内容
+                    answer_content = ai_msg['content']
+                    if len(answer_content) > config.MAX_CONTENT_PREVIEW * 2:
+                        answer_content = answer_content[:config.MAX_CONTENT_PREVIEW * 2] + "..."
+                    ai_content_parts.append(f"回答:\n{answer_content}")
+                    
+                    pair_content_parts.append(f"AI:\n" + "\n\n".join(ai_content_parts))
+                    content = "\n\n".join(pair_content_parts)
+                    
+                    round_num += 1
+                    i += 2  # 跳过AI消息，因为已经处理了
+                else:
+                    # 只有用户消息，没有对应的AI回复
+                    content = f"第{round_num}轮 - 用户:\n{user_content}"
+                    round_num += 1
+                    i += 1
+            else:
+                # 单独的AI消息（不应该出现，但为了健壮性处理）
+                ai_content_parts = []
+                
+                # 包含思考过程（如果存在）
+                if msg.get("reasoning_content"):
+                    reasoning = msg['reasoning_content']
+                    if len(reasoning) > config.MAX_CONTENT_PREVIEW * 2:
+                        reasoning = reasoning[:config.MAX_CONTENT_PREVIEW * 2] + "..."
+                    ai_content_parts.append(f"思考过程:\n{reasoning}")
+                
+                # 包含主要回答内容
+                answer_content = msg['content']
+                if len(answer_content) > config.MAX_CONTENT_PREVIEW * 2:
+                    answer_content = answer_content[:config.MAX_CONTENT_PREVIEW * 2] + "..."
+                ai_content_parts.append(f"回答:\n{answer_content}")
+                
+                content = f"第{round_num}轮 - AI:\n" + "\n\n".join(ai_content_parts)
+                round_num += 1
+                i += 1
+            
+            # 检查是否超过长度限制
+            content_length = len(content)
+            if total_length + content_length > max_length:
+                # 如果这是第一条消息，至少包含部分内容
+                if not content_parts:
+                    # 截取部分内容
+                    remaining = max_length - total_length - 50
+                    if remaining > 100:
+                        content = content[:remaining] + "\n...（对话内容较长，已截取部分）"
+                        content_parts.append(content)
+                else:
+                    content_parts.append("\n...（对话内容较长，已截取部分）")
                 break
             
             content_parts.append(content)
-            total_length += len(content)
+            total_length += content_length
         
         if not content_parts:
             return None
         
-        return "\n".join(content_parts)
+        # 使用更清晰的分隔符
+        return "\n\n---\n\n".join(content_parts)
     
     def parse_title_from_response(self, response):
         """从API响应中解析标题"""

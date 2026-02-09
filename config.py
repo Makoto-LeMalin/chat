@@ -46,11 +46,14 @@ FONT_H2 = ("Segoe UI", 14, "bold")
 FONT_H3 = ("Segoe UI", 12, "bold")
 FONT_ITALIC = ("Segoe UI", 10, "italic")
 
+# Canvas 在 Windows 上存在 y 坐标约 32767 像素的渲染上限，超出部分会显示为空白（Tk 限制）
+CANVAS_MAX_Y = 32767
+
 # UI尺寸常量
-WINDOW_WIDTH = 1657  # 增加宽度以容纳左右边栏
-WINDOW_HEIGHT = 1024
-WINDOW_MIN_WIDTH = 1400  # 降低最小宽度，允许折叠边栏
-WINDOW_MIN_HEIGHT = 900
+WINDOW_WIDTH = 1200  # 增加宽度以容纳左右边栏
+WINDOW_HEIGHT = 750
+WINDOW_MIN_WIDTH = 1000  # 降低最小宽度，允许折叠边栏
+WINDOW_MIN_HEIGHT = 600
 SIDEBAR_WIDTH = 310
 HISTORY_SIDEBAR_WIDTH = 310
 SIDEBAR_COLLAPSED_WIDTH = 40  # 折叠后的宽度
@@ -121,6 +124,7 @@ LIGHT_THEME = {
     "COLOR_BUTTON_GRAY": "#95a5a6",
     "COLOR_BUTTON_HOVER": "#3498db",
     "COLOR_CODE_BG": "#f8f9fa",
+    "COLOR_BG_PAIR_SELECTED": "#d0e8f7",  # 对话对选中时背景（更明显的青蓝）
 }
 
 # 深色主题（夜间模式）
@@ -152,6 +156,7 @@ DARK_THEME = {
     "COLOR_BUTTON_GRAY": "#868e96",
     "COLOR_BUTTON_HOVER": "#5c7cfa",
     "COLOR_CODE_BG": "#1e1e1e",
+    "COLOR_BG_PAIR_SELECTED": "#404050",  # 对话对选中时背景（更明显的亮色）
 }
 
 # 当前主题（默认浅色）

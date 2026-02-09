@@ -37,12 +37,12 @@ else:
 
 args.extend([
     '--add-data=config.py;.',
-    '--add-data=ui_components.py;.',
-    '--add-data=chat_display.py;.',
-    '--add-data=markdown_renderer.py;.',
+    '--add-data=qt_ui.py;.',
+    '--add-data=qt_chat.py;.',
+    '--add-data=qt_sidebar.py;.',
     '--add-data=api_client.py;.',
     '--add-data=history_manager.py;.',
-    '--hidden-import=tkinter',
+    '--hidden-import=PySide6',
     '--hidden-import=openai',
     '--clean',
 ])
