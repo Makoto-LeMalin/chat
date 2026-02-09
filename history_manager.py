@@ -127,8 +127,12 @@ class HistoryManager:
                 filepath = os.path.join(self.chat_history_dir, filename)
                 try:
                     mtime = os.path.getmtime(filepath)
-                    history_files.append((mtime, filepath, filename))
-                except:
+                    # 优先使用文件内「标题: xxx」，无则用 extract_title_from_file 的 fallback（含文件名/日期）
+                    display_title = self.extract_title_from_file(filepath)
+                    if not display_title:
+                        display_title = filename
+                    history_files.append((mtime, filepath, display_title))
+                except Exception:
                     continue
         
         # 按时间从新到旧排序
@@ -397,15 +401,19 @@ class HistoryManager:
                 return None
         
         title = raw_title.strip()
-        
+
         # 清理标题（移除可能的引号、换行等）
         title = title.strip('"').strip("'").strip()
         title = title.replace('\n', ' ').replace('\r', ' ')
         # 移除多余空格
         title = ' '.join(title.split())
-        
+
         if not title or title.lower() in ['deepseek ai 对话记录', '对话记录', 'chat history']:
             return None
-        
+
+        # 超过配置长度时截断（按字符，避免截断中文中间）
+        if len(title) > config.TITLE_MAX_LENGTH:
+            title = title[:config.TITLE_MAX_LENGTH]
+
         return title
 

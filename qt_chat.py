@@ -397,12 +397,13 @@ class ChatAreaWidget(QWidget):
         self.content_layout.insertWidget(self.content_layout.count() - 1, pair_widget)
         self._scroll_to_bottom()
 
-    def remove_pair_widget(self, pair_widget):
+    def remove_pair_widget(self, pair_widget, scroll_after=False):
         self.content_layout.removeWidget(pair_widget)
         pair_widget.deleteLater()
         if self.content_layout.count() <= 1:
             self.show_welcome()
-        self._scroll_to_bottom()
+        if scroll_after:
+            self._scroll_to_bottom()
 
     def clear_pairs(self):
         while self.content_layout.count() > 1:

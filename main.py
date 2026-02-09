@@ -3,6 +3,8 @@
 import os
 import json
 import threading
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTextEdit, QPushButton, QMessageBox, QFileDialog, QSplitter
@@ -173,6 +175,8 @@ class MainWindow(QMainWindow):
             "stream": self.config_panel.get_stream(),
             "thinking_enabled": self.config_panel.get_thinking_enabled(),
             "dark_mode": self.config_panel.get_dark_mode(),
+            "sidebar_collapsed": self.config_sidebar.is_collapsed(),
+            "history_sidebar_collapsed": self.history_sidebar.is_collapsed(),
         }
 
     def _apply_styles(self):
@@ -322,16 +326,48 @@ class MainWindow(QMainWindow):
         if r != QMessageBox.Yes:
             return
         pair = self.conversation_pairs.pop(pair_index)
-        self.chat_area.remove_pair_widget(pair)
-        for idx in sorted(self.conversation_pairs.keys(), reverse=True):
-            if idx > pair_index:
-                w = self.conversation_pairs.pop(idx)
-                w.pair_index = idx - 1
-                self.conversation_pairs[idx - 1] = w
+        n = len(self.conversation_history)
+        # 按位置删除：第 i 对对应 history[2*i]（用户）与 history[2*i+1]（助手），不依赖 widget 内存储的索引
+        u_del = 2 * pair_index
+        a_del = 2 * pair_index + 1
+        if u_del >= n:
+            self.conversation_pairs[pair_index] = pair
+            return
+        has_assistant = a_del < n
+        try:
+            if has_assistant:
+                del self.conversation_history[a_del]
+            del self.conversation_history[u_del]
+            n_removed = 2 if has_assistant else 1
+            # 只对“在被删 pair 之后”的 pair 做索引前移（key > pair_index）
+            for k, p in self.conversation_pairs.items():
+                if k <= pair_index:
+                    continue
+                if p.user_msg_index > a_del:
+                    p.user_msg_index -= n_removed
+                elif p.user_msg_index > u_del:
+                    p.user_msg_index -= 1
+                if p.ai_msg_index is not None:
+                    if p.ai_msg_index > a_del:
+                        p.ai_msg_index -= n_removed
+                    elif p.ai_msg_index > u_del:
+                        p.ai_msg_index -= 1
+        except Exception:
+            self.conversation_pairs[pair_index] = pair
+            raise
+        # 先重排 conversation_pairs 的 key 与各 widget 的 pair_index：先收集再写回，避免覆盖导致某个 widget 从 dict 丢失
+        moved = [(idx, self.conversation_pairs.pop(idx)) for idx in sorted(self.conversation_pairs.keys(), reverse=True) if idx > pair_index]
+        for idx, w in moved:
+            w.pair_index = idx - 1
+            self.conversation_pairs[idx - 1] = w
         if self.current_pair_index == pair_index:
             self.current_pair_index = -1
         elif self.current_pair_index > pair_index:
             self.current_pair_index -= 1
+        self.chat_area.remove_pair_widget(pair, scroll_after=False)
+        if not self.conversation_pairs:
+            self.chat_area.show_welcome()
+            self.conversation_history.clear()
 
     def _connect_stream_signals(self):
         self.signals.stream_thinking.connect(self._on_stream_thinking)
@@ -438,11 +474,12 @@ class MainWindow(QMainWindow):
         if not self.conversation_history:
             QMessageBox.warning(self, "警告", "没有对话内容可导出")
             return
+        default_name = f"deepseek_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        initial_path = os.path.join(self.history_manager.chat_history_dir, default_name)
         path, _ = QFileDialog.getSaveFileName(
             self, "导出对话",
-            self.history_manager.chat_history_dir,
+            initial_path,
             "Markdown (*.md);;All (*)",
-            f"deepseek_chat_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
         )
         if not path:
             return
@@ -469,8 +506,17 @@ class MainWindow(QMainWindow):
             if not content:
                 return None
             use_chat = self._is_reasoner_model()
+            max_len = config.TITLE_MAX_LENGTH
+            system_prompt = (
+                f"你是一个助手。请根据用户给出的对话内容，生成一句简短的中文标题用于概括该对话。"
+                f"只输出标题文字本身，不要加引号、不要解释、不要换行。标题长度不超过{max_len}个字。"
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ]
             resp = self.api_client.generate_title(
-                [{"role": "user", "content": content}],
+                messages,
                 self.config_panel.get_model(), use_chat,
             )
             return self.history_manager.parse_title_from_response(resp)
@@ -554,8 +600,8 @@ class MainWindow(QMainWindow):
                     self.chat_area.add_pair_widget(pair)
                     idx += 1
                 i += 1
-            self.chat_area.scroll_to_bottom()
             QMessageBox.information(self, "成功", f"已加载 {len(imported)} 条对话记录")
+            self.chat_area.scroll_to_bottom()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载失败: {e}")
 
