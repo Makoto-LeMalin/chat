@@ -3,6 +3,18 @@
 from openai import OpenAI
 
 
+def get_client_for_provider(provider_id):
+    """根据 provider_id 创建该厂商的 API 客户端。无此厂商或缺少密钥时返回 None。"""
+    try:
+        import config
+        p = config.get_provider_by_id(provider_id)
+        if not p or not p.api_key or not p.endpoint:
+            return None
+        return DeepSeekAPIClient(p.api_key, p.endpoint)
+    except Exception:
+        return None
+
+
 class DeepSeekAPIClient:
     """DeepSeek API客户端封装"""
     

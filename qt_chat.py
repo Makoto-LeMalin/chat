@@ -357,9 +357,9 @@ class ChatAreaWidget(QWidget):
         self.scroll.setWidget(self.content)
         layout.addWidget(self.scroll)
 
-        self.welcome = QLabel()
+        self.welcome = QLabel(self.content)  # 明确设置父窗口为 content
         self.welcome.setWordWrap(True)
-        self.welcome.setText("""🤖 欢迎使用 DeepSeek AI Assistant!
+        self.welcome.setText("""🤖 欢迎使用 AI Assistant!
 
 请在左侧配置您的 API 密钥，然后点击"连接"按钮开始使用。
 
@@ -388,7 +388,7 @@ class ChatAreaWidget(QWidget):
         idx = self.content_layout.indexOf(self.welcome)
         if idx >= 0:
             self.content_layout.removeWidget(self.welcome)
-            self.welcome.setParent(None)
+            # 不要设置 setParent(None)，保持父窗口关系，避免变成独立窗口
             if self.content_layout.count() > 0:
                 self.content_layout.takeAt(0)
 

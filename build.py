@@ -23,7 +23,7 @@ else:
 
 args = [
     'main.py',
-    '--name=DeepSeek-Api',
+    '--name=chat_ai',
     '--windowed',  # 不显示控制台窗口
     '--onefile',   # 打包为单个exe文件
 ]

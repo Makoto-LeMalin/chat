@@ -32,12 +32,12 @@ class WorkerSignals(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DeepSeek AI Assistant")
+        self.setWindowTitle("AI Assistant")
         self.resize(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
         self.setMinimumSize(config.WINDOW_MIN_WIDTH, config.WINDOW_MIN_HEIGHT)
 
         self.config_file = config.CONFIG_FILE
-        self.config = self._load_config()
+        self.config = config.load_config()
         config.set_theme(self.config.get("dark_mode", False))
 
         self.api_client = None
@@ -138,37 +138,23 @@ class MainWindow(QMainWindow):
         self._apply_styles()
         QShortcut(QKeySequence("Ctrl+Return"), self.input_text, self._send_message)
 
-        if self.config.get("api_key") and self.config.get("base_url"):
-            self._init_client_sync()
-
-    def _load_config(self):
-        out = config.DEFAULT_CONFIG.copy()
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for k in out:
-                        if k in data:
-                            out[k] = data[k]
-            except Exception as e:
-                print(f"加载配置失败: {e}")
-        return out
+        if self.config.get("current_provider_id"):
+            p = config.get_provider_by_id(self.config["current_provider_id"])
+            if p and p.api_key:
+                self._init_client_sync()
 
     def _save_config(self):
-        self.config = self._build_config_dict()
+        self.config = config.load_config()
+        self.config.update(self._build_config_dict())
         try:
-            d = os.path.dirname(self.config_file)
-            if d:
-                os.makedirs(d, exist_ok=True)
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, ensure_ascii=False, indent=2)
+            config.save_config(self.config)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败: {e}")
 
     def _build_config_dict(self):
         return {
-            "api_key": self.config_panel.get_api_key(),
-            "base_url": self.config_panel.get_base_url(),
+            "current_provider_id": self.config_panel.get_current_provider_id(),
+            "current_model": self.config_panel.get_model(),
             "model": self.config_panel.get_model(),
             "max_tokens": self.config_panel.get_max_tokens(),
             "temperature": self.config_panel.get_temperature(),
@@ -185,18 +171,11 @@ class MainWindow(QMainWindow):
     def _save_sidebar_state(self, _collapsed=None):
         """保存左右侧栏折叠状态到配置"""
         try:
-            current = {}
-            if os.path.exists(self.config_file):
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    current = json.load(f)
+            current = config.load_config()
             current["sidebar_collapsed"] = self.config_sidebar.is_collapsed()
             current["history_sidebar_collapsed"] = self.history_sidebar.is_collapsed()
             current["dark_mode"] = self.config_panel.get_dark_mode()
-            d = os.path.dirname(self.config_file)
-            if d:
-                os.makedirs(d, exist_ok=True)
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(current, f, ensure_ascii=False, indent=2)
+            config.save_config(current)
         except Exception:
             pass
 
@@ -218,24 +197,21 @@ class MainWindow(QMainWindow):
         self.config_panel.update_max_tokens_range()
 
     def _init_client_sync(self):
+        provider_id = self.config_panel.get_current_provider_id()
+        if not provider_id:
+            QMessageBox.warning(self, "警告", "请先在「API 密钥」中添加端点并选择厂商。")
+            return
         api_key = self.config_panel.get_api_key()
-        base_url = self.config_panel.get_base_url()
         if not api_key:
-            QMessageBox.warning(self, "警告", "请输入 API 密钥")
+            QMessageBox.warning(self, "警告", "请为当前厂商配置 API 密钥。")
             return
         try:
-            self.api_client = api_client.DeepSeekAPIClient(api_key, base_url)
-            self.config = self._build_config_dict()
-            self.config["api_key"] = api_key
-            self.config["base_url"] = base_url
-            try:
-                d = os.path.dirname(self.config_file)
-                if d:
-                    os.makedirs(d, exist_ok=True)
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    json.dump(self.config, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
+            self.api_client = api_client.get_client_for_provider(provider_id)
+            if not self.api_client:
+                raise RuntimeError("无法创建客户端")
+            self.config = config.load_config()
+            self.config.update(self._build_config_dict())
+            config.save_config(self.config)
             self._set_status("已连接", config.get_theme()["COLOR_STATUS_GREEN"], "COLOR_STATUS_GREEN")
             self.send_btn.setEnabled(True)
             self.config_panel.set_init_connected(True)

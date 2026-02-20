@@ -1,5 +1,10 @@
 """配置和常量定义"""
 
+import json
+import os
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
 # 颜色常量（向后兼容，将在初始化时更新）
 COLOR_BG_MAIN = "#f0f2f5"
 COLOR_BG_SIDEBAR = "#2c3e50"
@@ -61,7 +66,10 @@ TITLE_BAR_HEIGHT = 60
 INPUT_HEIGHT = 4
 CHECKBOX_FRAME_WIDTH = 30
 
-# 默认配置
+# 文件路径
+CONFIG_FILE = "config/deepseek_config.json"
+
+# 默认单端点配置（用于迁移旧配置）
 DEFAULT_CONFIG = {
     "api_key": "",
     "base_url": "https://api.deepseek.com",
@@ -75,15 +83,152 @@ DEFAULT_CONFIG = {
     "history_sidebar_collapsed": False
 }
 
-# 模型配置
-MODELS = ['deepseek-chat', 'deepseek-reasoner']
+# 兼容：默认模型列表与 token 上限（无 providers 时使用）
+MODELS = ["deepseek-chat", "deepseek-reasoner"]
 MODEL_MAX_TOKENS = {
-    'deepseek-chat': 8000,
-    'deepseek-reasoner': 64000
+    "deepseek-chat": 8000,
+    "deepseek-reasoner": 64000
 }
+DEFAULT_MODEL_MAX_TOKENS = 8000
 
-# 文件路径
-CONFIG_FILE = "config/deepseek_config.json"
+
+@dataclass
+class Provider:
+    """单个厂商/端点配置"""
+    id: str
+    name: str
+    endpoint: str
+    api_key: str
+    models: List[str] = field(default_factory=list)
+    model_max_tokens: Dict[str, int] = field(default_factory=dict)
+    models_url: str = ""  # 获取模型列表的 URL，留空则自动尝试 /v1/models 或 /models
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "endpoint": self.endpoint.strip().rstrip("/"),
+            "api_key": self.api_key,
+            "models": list(self.models),
+            "model_max_tokens": dict(self.model_max_tokens),
+            "models_url": self.models_url.strip(),
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Provider":
+        return cls(
+            id=str(d.get("id", "")),
+            name=str(d.get("name", "")),
+            endpoint=str(d.get("endpoint", "")).strip().rstrip("/"),
+            api_key=str(d.get("api_key", "")),
+            models=list(d.get("models") or []),
+            model_max_tokens=dict(d.get("model_max_tokens") or {}),
+            models_url=str(d.get("models_url", "")).strip(),
+        )
+
+
+def _config_path() -> str:
+    """与 main 一致：使用相对路径，依赖进程 cwd 为项目根。"""
+    return CONFIG_FILE
+
+
+def _ensure_config_dir():
+    p = _config_path()
+    d = os.path.dirname(p)
+    if d:
+        os.makedirs(d, exist_ok=True)
+
+
+def migrate_old_config(data: Dict[str, Any]) -> Dict[str, Any]:
+    """将旧格式（无 providers）转为新格式。不写文件，只返回新 dict。"""
+    if "providers" in data and isinstance(data["providers"], list) and len(data["providers"]) > 0:
+        return data
+    base_url = (data.get("base_url") or DEFAULT_CONFIG["base_url"]).strip().rstrip("/")
+    model = data.get("model") or DEFAULT_CONFIG["model"]
+    api_key = data.get("api_key") or ""
+    provider_id = "default"
+    name = "Default"
+    if "deepseek" in base_url.lower():
+        provider_id = "deepseek"
+        name = "DeepSeek"
+    models = list(MODELS)
+    model_max_tokens = dict(MODEL_MAX_TOKENS)
+    if model and model not in models:
+        models = [model] + [m for m in models if m != model]
+    providers = [
+        {
+            "id": provider_id,
+            "name": name,
+            "endpoint": base_url,
+            "api_key": api_key,
+            "models": models,
+            "model_max_tokens": model_max_tokens,
+        }
+    ]
+    out = dict(data)
+    out["providers"] = providers
+    out["current_provider_id"] = provider_id
+    out["current_model"] = model
+    return out
+
+
+def load_config() -> Dict[str, Any]:
+    """加载完整配置；若为旧格式则自动迁移为新格式（仅内存，不自动保存）。"""
+    path = _config_path()
+    if not os.path.exists(path):
+        return migrate_old_config(dict(DEFAULT_CONFIG))
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = dict(DEFAULT_CONFIG)
+    return migrate_old_config(data)
+
+
+def save_config(data: Dict[str, Any]) -> None:
+    """保存完整配置。"""
+    _ensure_config_dir()
+    path = _config_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_providers() -> List[Provider]:
+    """加载 providers 列表（已迁移格式）。"""
+    data = load_config()
+    raw = data.get("providers") or []
+    return [Provider.from_dict(p) for p in raw]
+
+
+def save_providers(providers: List[Provider], full_config: Optional[Dict[str, Any]] = None) -> None:
+    """保存 providers；若提供 full_config 则在此基础上更新 providers 后整体保存。"""
+    data = full_config if full_config is not None else load_config()
+    data["providers"] = [p.to_dict() for p in providers]
+    save_config(data)
+
+
+def get_provider_by_id(provider_id: str) -> Optional[Provider]:
+    """按 id 获取 provider。"""
+    for p in load_providers():
+        if p.id == provider_id:
+            return p
+    return None
+
+
+def get_models_for_provider(provider: Optional[Provider]) -> List[str]:
+    """获取某 provider 的模型列表；无则返回默认 MODELS。"""
+    if provider and provider.models:
+        return list(provider.models)
+    return list(MODELS)
+
+
+def get_model_max_tokens(provider_id: Optional[str], model: str) -> int:
+    """获取某厂商下某模型的最大 token 数。"""
+    if provider_id:
+        p = get_provider_by_id(provider_id)
+        if p and p.model_max_tokens and model in p.model_max_tokens:
+            return p.model_max_tokens[model]
+    return MODEL_MAX_TOKENS.get(model, DEFAULT_MODEL_MAX_TOKENS)
 CHAT_HISTORY_DIR = "chat_history"
 ICON_FILE = "icon/deepseek.ico"
 
